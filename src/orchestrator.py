@@ -816,3 +816,44 @@ if __name__ == "__main__":
         print("\n✅ Pipeline test completed!")
     
     asyncio.run(test_pipeline())
+    
+async def search(self, query: str, filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """
+    Search intelligence assets
+    
+    Args:
+        query: Search query
+        filters: Optional filters
+        
+    Returns:
+        Search results
+    """
+    from src.search import SearchEngine
+    
+    # Get assets from recent pipeline runs
+    # For now, use sample data
+    assets = [
+        {
+            "asset_id": "AST_001",
+            "title": "John Doe Profile",
+            "content": {
+                "name": "John Doe",
+                "phone": "+1-555-123-4567",
+                "email": "john.doe@email.com"
+            }
+        },
+        {
+            "asset_id": "AST_002",
+            "title": "ACME Corp Intelligence",
+            "content": {
+                "name": "ACME Corp",
+                "industry": "Technology",
+                "employees": 5000
+            }
+        }
+    ]
+    
+    engine = SearchEngine()
+    engine.index_assets(assets)
+    
+    return engine.search(query, filters)
