@@ -714,8 +714,9 @@ class PipelineOrchestrator:
         }
     
     async def _asset_builder(self, data: Dict[str, Any], context: PipelineContext) -> Dict[str, Any]:
-        """Stage 16: Build intelligence assets with confidence"""
+        """Stage 16: Build intelligence assets with confidence and metadata enrichment"""
         from src.models.mdips import ConfidenceModel
+        from src.metadata import MetadataEnricher
         
         # Get calibrated confidence
         calibrated_confidence = data.get("calibrated_confidence", {})
@@ -736,21 +737,23 @@ class PipelineOrchestrator:
             "asset_id": f"AST_{context.request_id[:8]}",
             "type": "intelligence_report",
             "title": "Preliminary Intelligence Assessment",
+            "content": data.get("evidence", {}),
             "confidence": {
                 "overall": asset_confidence.overall,
                 "evidence_rating": asset_confidence.evidence_rating.value,
-                "dimensions": asset_confidence.dict()
-            }
+                "dimensions": asset_confidence.model_dump()
+            },
+            "provenance": [p.model_dump() for p in context.provenance_chain],
+            "timestamp": datetime.now().isoformat()
         }
+        
+        # Enrich with metadata
+        enricher = MetadataEnricher()
+        enriched_asset = enricher.enrich_dictionary(asset)
         
         return {
             **data,
-            "assets": [
-                {
-                    **asset,
-                    "provenance": [p.dict() for p in context.provenance_chain]
-                }
-            ]
+            "assets": [enriched_asset]
         }
     
     async def _dataset_builder(self, data: Dict[str, Any], context: PipelineContext) -> Dict[str, Any]:
