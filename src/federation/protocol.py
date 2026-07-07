@@ -13,9 +13,9 @@ import json
 @dataclass
 class FederationMessage:
     """Message exchanged between federation nodes"""
-    message_id: str = field(default_factory=lambda: f"MSG_{uuid.uuid4().hex[:8].upper()}")
-    message_type: str  # discovery, share, query, response, sync
+    message_type: str
     sender_id: str
+    message_id: str = field(default_factory=lambda: f"MSG_{uuid.uuid4().hex[:8].upper()}")
     target_id: Optional[str] = None
     payload: Dict[str, Any] = field(default_factory=dict)
     timestamp: datetime = field(default_factory=datetime.now)
@@ -147,9 +147,9 @@ class FederationProtocol:
         """Deserialize a message from JSON"""
         obj = json.loads(data)
         return FederationMessage(
-            message_id=obj.get("message_id"),
             message_type=obj.get("message_type"),
             sender_id=obj.get("sender_id"),
+            message_id=obj.get("message_id"),
             target_id=obj.get("target_id"),
             payload=obj.get("payload", {}),
             timestamp=datetime.fromisoformat(obj.get("timestamp")),
