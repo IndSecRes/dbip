@@ -2,7 +2,9 @@
 DBIP Pipeline Orchestrator
 Manages the 19-stage intelligence transformation pipeline
 """
-
+# Add at the top with other imports
+from src.graph import KnowledgeGraphRepository, GraphNode, GraphRelationship
+from src.graph.neo4j_client import get_neo4j_client
 import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime
@@ -57,6 +59,7 @@ class PipelineOrchestrator:
     def __init__(self):
         self.logger = logging.getLogger("DBIP.Pipeline")
         self.setup_logging()
+        self.graph_repo = KnowledgeGraphRepository()
     
     def setup_logging(self):
         """Configure logging for the pipeline"""
