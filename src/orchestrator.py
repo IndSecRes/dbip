@@ -396,38 +396,117 @@ class PipelineOrchestrator:
     async def _evidence_assessment(self, data: Dict[str, Any], context: PipelineContext) -> Dict[str, Any]:
         """Stage 12: Assess evidence quality with multi-dimensional confidence"""
         from src.models.mdips import ConfidenceModel, EvidenceRating
+        from src.evidence import EvidenceAssessor
         
-        # Extract confidence from previous stage
-        confidence_data = data.get("confidence_scores", {})
+        # Get extracted entities from previous stage
+        extracted_entities = data.get("extracted_entities", [])
         
-        # Build evidence assessment with confidence
-        evidence_confidence = ConfidenceModel(
-            source_reliability=0.9,
-            extraction_confidence=0.95,
-            identity_confidence=0.92,
-            relationship_confidence=0.85,
-            temporal_confidence=0.88,
-            analytical_confidence=0.90
-        )
+        # Create evidence assessor
+        assessor = EvidenceAssessor()
         
-        evidence_rating = evidence_confidence.evidence_rating
+        # Convert signals to evidence - properly format content as dict
+        signals = data.get("collected_data", {}).get("records", [])
+        if not signals:
+            # Fallback: use extracted data
+            signals = data.get("extracted_entities", [])
+        
+        evidence_list = []
+        for signal in signals[:5]:  # Limit to 5 for performance
+            # Ensure content is a dictionary
+            if isinstance(signal, dict):
+                # If signal has 'content' as string, convert to dict
+                if "content" in signal and isinstance(signal["content"], str):
+                    signal["content"] = {"message": signal["content"]}
+                elif "content" not in signal:
+                    signal["content"] = {"data": signal}
+            
+            evidence = assessor.assess_evidence(
+                signal,
+                source_reliability=0.8,
+                extraction_confidence=0.85
+            )
+            evidence_list.append(evidence)
+        
+        # Corroborate evidence
+        corroborated = assessor.corroborate_evidence(evidence_list)
+        
+        # Build evidence assessment
+        assessments = []
+        for item in corroborated:
+            evidence = item["evidence"]
+            assessments.append({
+                "evidence_id": evidence.evidence_id,
+                "type": evidence.evidence_type,
+                "source": evidence.source,
+                "confidence": {
+                    "overall": evidence.confidence.overall,
+                    "rating": evidence.confidence.evidence_rating.value,
+                    "dimensions": evidence.confidence.model_dump()
+                },
+                "corroboration_count": item["corroborating_count"],
+                "contradictory_count": item["contradictory_count"],
+                "corroboration_score": item["corroboration_score"],
+                "timestamp": evidence.timestamp.isoformat(),
+                "hash": evidence.hash,
+                "supporting_sources": evidence.supporting_sources,
+                "corroborating_evidence": evidence.corroborating_evidence,
+                "contradictory_evidence": evidence.contradictory_evidence
+            })
+        
+        # Calculate summary statistics
+        if assessments:
+            avg_confidence = round(sum(e["confidence"]["overall"] for e in assessments) / len(assessments), 3)
+            rating_counts = {
+                "A": len([e for e in assessments if e["confidence"]["rating"] == "A"]),
+                "B": len([e for e in assessments if e["confidence"]["rating"] == "B"]),
+                "C": len([e for e in assessments if e["confidence"]["rating"] == "C"]),
+                "D": len([e for e in assessments if e["confidence"]["rating"] == "D"])
+            }
+            avg_corroboration = round(sum(e["corroboration_score"] for e in assessments) / len(assessments), 3)
+        else:
+            avg_confidence = 0
+            rating_counts = {"A": 0, "B": 0, "C": 0, "D": 0}
+            avg_corroboration = 0
         
         return {
             **data,
-            "evidence_ratings": [
-                {
-                    "entity": "ent_001",
-                    "rating": evidence_rating.value,
-                    "score": evidence_confidence.overall,
-                    "confidence": evidence_confidence.dict(),
-                    "evidence_rating_description": {
-                        EvidenceRating.A: "Multiple independent sources, strong corroboration",
-                        EvidenceRating.B: "Multiple sources, some corroboration",
-                        EvidenceRating.C: "Single source or conflicting evidence",
-                        EvidenceRating.D: "Unconfirmed intelligence"
-                    }.get(evidence_rating, "Unknown")
-                }
-            ]
+            "evidence": assessments,
+            "evidence_summary": {
+                "total_evidence": len(assessments),
+                "average_confidence": avg_confidence,
+                "ratings_distribution": rating_counts,
+                "corroboration_rate": avg_corroboration,
+                "total_corroborating": sum(e["corroboration_count"] for e in assessments),
+                "total_contradictory": sum(e["contradictory_count"] for e in assessments)
+            }
+        }
+        
+        # Calculate summary statistics
+        if assessments:
+            avg_confidence = round(sum(e["confidence"]["overall"] for e in assessments) / len(assessments), 3)
+            rating_counts = {
+                "A": len([e for e in assessments if e["confidence"]["rating"] == "A"]),
+                "B": len([e for e in assessments if e["confidence"]["rating"] == "B"]),
+                "C": len([e for e in assessments if e["confidence"]["rating"] == "C"]),
+                "D": len([e for e in assessments if e["confidence"]["rating"] == "D"])
+            }
+            avg_corroboration = round(sum(e["corroboration_score"] for e in assessments) / len(assessments), 3)
+        else:
+            avg_confidence = 0
+            rating_counts = {"A": 0, "B": 0, "C": 0, "D": 0}
+            avg_corroboration = 0
+        
+        return {
+            **data,
+            "evidence": assessments,
+            "evidence_summary": {
+                "total_evidence": len(assessments),
+                "average_confidence": avg_confidence,
+                "ratings_distribution": rating_counts,
+                "corroboration_rate": avg_corroboration,
+                "total_corroborating": sum(e["corroboration_count"] for e in assessments),
+                "total_contradictory": sum(e["contradictory_count"] for e in assessments)
+            }
         }
     
     async def _signal_rating(self, data: Dict[str, Any], context: PipelineContext) -> Dict[str, Any]:

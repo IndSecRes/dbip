@@ -323,6 +323,9 @@ class MDPISSEvidence(BaseModel):
     chain_of_custody: List[ProvenanceEntry] = Field(default_factory=list)
     confidence: ConfidenceModel = Field(default_factory=ConfidenceModel)
     provenance: ProvenanceChain = Field(default_factory=ProvenanceChain)
+    supporting_sources: List[str] = Field(default_factory=list)  # NEW
+    corroborating_evidence: List[str] = Field(default_factory=list)  # NEW
+    contradictory_evidence: List[str] = Field(default_factory=list)  # NEW
 
 
 class MDIPSObservation(BaseModel):
@@ -497,3 +500,5 @@ if __name__ == "__main__":
     print(f"   Evidence Rating: {confidence.evidence_rating}")
     
     print("\n✅ MDIPS models test completed!")
+    
+    
