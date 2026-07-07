@@ -2,9 +2,8 @@
 DBIP Pipeline Orchestrator
 Manages the 19-stage intelligence transformation pipeline
 """
-# Add at the top with other imports
-from src.graph import KnowledgeGraphRepository, GraphNode, GraphRelationship
-from src.graph.neo4j_client import get_neo4j_client
+
+import time
 import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime
@@ -17,6 +16,42 @@ from src.models import (
     SignalType
 )
 from src.config import config
+
+# Observability imports
+from src.observability.metrics import MetricsCollector
+from src.observability.logger import Logger, LogLevel
+from src.observability.tracer import Tracer
+
+# Graph imports
+from src.graph import KnowledgeGraphRepository, GraphNode, GraphRelationship
+from src.graph.neo4j_client import get_neo4j_client
+
+
+# Global observability instances
+_metrics = None
+_tracer = None
+_logger = None
+
+
+def get_metrics():
+    global _metrics
+    if _metrics is None:
+        _metrics = MetricsCollector()
+    return _metrics
+
+
+def get_tracer():
+    global _tracer
+    if _tracer is None:
+        _tracer = Tracer("dbip")
+    return _tracer
+
+
+def get_logger(name="DBIP.Pipeline"):
+    global _logger
+    if _logger is None:
+        _logger = Logger(name, LogLevel.INFO)
+    return _logger
 
 
 class PipelineContext:
@@ -57,26 +92,31 @@ class PipelineOrchestrator:
     """
     
     def __init__(self):
-        self.logger = logging.getLogger("DBIP.Pipeline")
-        self.setup_logging()
+        self.logger = get_logger("DBIP.Pipeline")
+        self.metrics = get_metrics()
+        self.tracer = get_tracer()
         self.graph_repo = KnowledgeGraphRepository()
-    
-    def setup_logging(self):
-        """Configure logging for the pipeline"""
-        logging.basicConfig(
-            level=logging.INFO if config.get("debug", False) else logging.WARNING,
-            format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        )
     
     async def process_intelligence(self, raw_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Main pipeline entry point
         Processes raw data through all 19 stages
         """
+        start_time = time.time()
+        
+        # Start trace
+        trace = self.tracer.start_trace("process_intelligence")
+        current_span = trace.get_current_span()
+        if current_span:
+            current_span.add_event("pipeline_started", {"request_id": trace.trace_id})
+        
         context = PipelineContext()
         self.logger.info(f"Starting pipeline for request: {context.request_id}")
         
         try:
+            # Record pipeline start metric
+            self.metrics.record_request("/pipeline/start", 0)
+            
             # Stage 1: Source Discovery
             self.logger.debug("Stage 1: Source Discovery")
             context.current_stage = "source_discovery"
@@ -229,6 +269,20 @@ class PipelineOrchestrator:
                 source_id="pipeline", source_type="internal", confidence_score=0.98
             ))
             
+            # Calculate duration and record metrics
+            duration = time.time() - start_time
+            self.metrics.record_pipeline_run(19, duration, True)
+            self.metrics.record_asset_created("intelligence_report", "A")
+            
+            # End trace with success
+            if current_span:
+                current_span.add_event("pipeline_completed", {
+                    "duration": duration,
+                    "stages": 19,
+                    "request_id": context.request_id
+                })
+                current_span.end()
+            
             self.logger.info(f"Pipeline completed for request: {context.request_id}")
             
             return {
@@ -239,7 +293,23 @@ class PipelineOrchestrator:
             }
             
         except Exception as e:
-            self.logger.error(f"Pipeline failed for {context.request_id}: {str(e)}")
+            # Calculate duration and record failure metrics
+            duration = time.time() - start_time
+            self.metrics.record_pipeline_run(0, duration, False)
+            self.metrics.record_error(type(e).__name__, "pipeline")
+            
+            # Log the error
+            self.logger.error(f"Pipeline failed for {context.request_id}: {str(e)}", exception=e)
+            
+            # End trace with error
+            if current_span:
+                current_span.add_event("pipeline_failed", {
+                    "error": str(e),
+                    "duration": duration,
+                    "request_id": context.request_id
+                })
+                current_span.end()
+            
             return {
                 "status": "failed",
                 "request_id": context.request_id,
@@ -316,7 +386,6 @@ class PipelineOrchestrator:
     async def _entity_extraction(self, data: Dict[str, Any], context: PipelineContext) -> Dict[str, Any]:
         """Stage 8: Extract entities with multi-dimensional confidence"""
         from src.models.mdips import ConfidenceModel, MDIPSEntity, EntityType, Domain, create_entity
-        from datetime import datetime
         
         # Example: Extract person entity with confidence
         person_confidence = ConfidenceModel(
@@ -347,7 +416,7 @@ class PipelineOrchestrator:
         
         return {
             **data,
-            "extracted_entities": [entity.dict()],
+            "extracted_entities": [entity.model_dump()],
             "confidence_scores": {
                 "entity_id": entity.entity_id,
                 "overall": person_confidence.overall,
@@ -373,8 +442,7 @@ class PipelineOrchestrator:
         # Also include raw signals if available
         raw_signals = data.get("collected_data", {}).get("records", [])
         if raw_signals:
-            # Add raw signals with basic structure
-            for raw in raw_signals[:10]:  # Limit to 10
+            for raw in raw_signals[:10]:
                 if isinstance(raw, dict):
                     signals.append({
                         "source": raw.get("source", "unknown"),
@@ -445,87 +513,16 @@ class PipelineOrchestrator:
     
     async def _identity_resolution(self, data: Dict[str, Any], context: PipelineContext) -> Dict[str, Any]:
         """Stage 11: Resolve identities across sources"""
-        try:
-            from src.identity import IdentityResolver
-            from src.identity.resolver import ResolvedEntity
-            from src.models.mdips import ConfidenceModel, EvidenceRating
-            import uuid
-            from datetime import datetime
-            
-            # Get entities from previous stage
-            entities = data.get("resolved_entities", [])
-            if not entities:
-                entities = data.get("extracted_entities", [])
-            
-            if not entities or not isinstance(entities, list):
-                return {
-                    **data,
-                    "resolved_identities": [],
-                    "resolution_summary": {
-                        "total_entities": 0,
-                        "resolved_count": 0,
-                        "unique_count": 0,
-                        "resolution_rate": 0
-                    }
-                }
-            
-            # Initialize resolver with lower threshold for testing
-            resolver = IdentityResolver(threshold=0.7)
-            
-            # Resolve entities with error handling
-            try:
-                resolved = resolver.resolve_entities(entities)
-            except Exception as e:
-                self.logger.warning(f"Identity resolution error: {e}")
-                # Fallback: return entities as-is
-                resolved = []
-                for entity in entities:
-                    if entity and isinstance(entity, dict):
-                        resolved.append(ResolvedEntity(
-                            entity_id=entity.get("entity_id", str(uuid.uuid4())),
-                            canonical_id=f"CAN_{uuid.uuid4().hex[:8].upper()}",
-                            source_entity_ids=[entity.get("entity_id", str(uuid.uuid4()))],
-                            attributes=entity.get("attributes", {}),
-                            aliases=entity.get("aliases", []),
-                            confidence=ConfidenceModel(source_reliability=0.5),
-                            evidence_rating=EvidenceRating.C,
-                            resolved_at=datetime.now(),
-                            match_score=1.0
-                        ))
-            
-            # Build output
-            resolved_data = []
-            for entity in resolved:
-                if entity:
-                    resolved_data.append({
-                        "entity_id": getattr(entity, 'entity_id', ''),
-                        "canonical_id": getattr(entity, 'canonical_id', ''),
-                        "source_count": len(getattr(entity, 'source_entity_ids', [])),
-                        "source_entity_ids": getattr(entity, 'source_entity_ids', []),
-                        "attributes": getattr(entity, 'attributes', {}),
-                        "aliases": getattr(entity, 'aliases', []),
-                        "confidence": {
-                            "overall": getattr(entity, 'confidence', ConfidenceModel()).overall,
-                            "rating": getattr(entity, 'evidence_rating', EvidenceRating.C).value,
-                            "dimensions": getattr(entity, 'confidence', ConfidenceModel()).model_dump()
-                        },
-                        "match_score": getattr(entity, 'match_score', 0),
-                        "is_resolved": getattr(entity, 'is_resolved', False),
-                        "resolved_at": getattr(entity, 'resolved_at', datetime.now()).isoformat()
-                    })
-            
-            return {
-                **data,
-                "resolved_identities": resolved_data,
-                "resolution_summary": {
-                    "total_entities": len(entities),
-                    "resolved_count": len(resolved),
-                    "unique_count": len([e for e in resolved if getattr(e, 'is_resolved', False)]),
-                    "resolution_rate": round(len([e for e in resolved if getattr(e, 'is_resolved', False)]) / len(entities) if entities else 0, 3)
-                }
-            }
-        except Exception as e:
-            self.logger.error(f"Identity resolution failed: {e}")
+        from src.identity import IdentityResolver
+        from src.identity.resolver import ResolvedEntity
+        from src.models.mdips import ConfidenceModel, EvidenceRating
+        
+        # Get entities from previous stage
+        entities = data.get("resolved_entities", [])
+        if not entities:
+            entities = data.get("extracted_entities", [])
+        
+        if not entities or not isinstance(entities, list):
             return {
                 **data,
                 "resolved_identities": [],
@@ -533,43 +530,85 @@ class PipelineOrchestrator:
                     "total_entities": 0,
                     "resolved_count": 0,
                     "unique_count": 0,
-                    "resolution_rate": 0,
-                    "error": str(e)
+                    "resolution_rate": 0
                 }
             }
+        
+        # Initialize resolver
+        resolver = IdentityResolver(threshold=0.7)
+        
+        try:
+            resolved = resolver.resolve_entities(entities)
+        except Exception as e:
+            self.logger.warning(f"Identity resolution error: {e}")
+            resolved = []
+            for entity in entities:
+                if entity and isinstance(entity, dict):
+                    resolved.append(ResolvedEntity(
+                        entity_id=entity.get("entity_id", str(uuid.uuid4())),
+                        canonical_id=f"CAN_{uuid.uuid4().hex[:8].upper()}",
+                        source_entity_ids=[entity.get("entity_id", str(uuid.uuid4()))],
+                        attributes=entity.get("attributes", {}),
+                        aliases=entity.get("aliases", []),
+                        confidence=ConfidenceModel(source_reliability=0.5),
+                        evidence_rating=EvidenceRating.C,
+                        resolved_at=datetime.now(),
+                        match_score=1.0
+                    ))
+        
+        resolved_data = []
+        for entity in resolved:
+            if entity:
+                resolved_data.append({
+                    "entity_id": getattr(entity, 'entity_id', ''),
+                    "canonical_id": getattr(entity, 'canonical_id', ''),
+                    "source_count": len(getattr(entity, 'source_entity_ids', [])),
+                    "source_entity_ids": getattr(entity, 'source_entity_ids', []),
+                    "attributes": getattr(entity, 'attributes', {}),
+                    "aliases": getattr(entity, 'aliases', []),
+                    "confidence": {
+                        "overall": getattr(entity, 'confidence', ConfidenceModel()).overall,
+                        "rating": getattr(entity, 'evidence_rating', EvidenceRating.C).value,
+                        "dimensions": getattr(entity, 'confidence', ConfidenceModel()).model_dump()
+                    },
+                    "match_score": getattr(entity, 'match_score', 0),
+                    "is_resolved": getattr(entity, 'is_resolved', False),
+                    "resolved_at": getattr(entity, 'resolved_at', datetime.now()).isoformat()
+                })
+        
+        return {
+            **data,
+            "resolved_identities": resolved_data,
+            "resolution_summary": {
+                "total_entities": len(entities),
+                "resolved_count": len(resolved),
+                "unique_count": len([e for e in resolved if getattr(e, 'is_resolved', False)]),
+                "resolution_rate": round(len([e for e in resolved if getattr(e, 'is_resolved', False)]) / len(entities) if entities else 0, 3)
+            }
+        }
     
     async def _evidence_assessment(self, data: Dict[str, Any], context: PipelineContext) -> Dict[str, Any]:
         """Stage 12: Assess evidence quality with multi-dimensional confidence"""
         from src.models.mdips import ConfidenceModel, EvidenceRating
         from src.evidence import EvidenceAssessor
         
-        # Get extracted entities from previous stage
-        extracted_entities = data.get("extracted_entities", [])
-        
         # Create evidence assessor
         assessor = EvidenceAssessor()
         
-        # Convert signals to evidence - properly format content as dict
+        # Convert signals to evidence
         signals = data.get("collected_data", {}).get("records", [])
         if not signals:
-            # Fallback: use extracted data
             signals = data.get("extracted_entities", [])
         
         evidence_list = []
-        for signal in signals[:5]:  # Limit to 5 for performance
-            # Ensure content is a dictionary
+        for signal in signals[:5]:
             if isinstance(signal, dict):
-                # If signal has 'content' as string, convert to dict
                 if "content" in signal and isinstance(signal["content"], str):
                     signal["content"] = {"message": signal["content"]}
                 elif "content" not in signal:
                     signal["content"] = {"data": signal}
             
-            evidence = assessor.assess_evidence(
-                signal,
-                source_reliability=0.8,
-                extraction_confidence=0.85
-            )
+            evidence = assessor.assess_evidence(signal, source_reliability=0.8, extraction_confidence=0.85)
             evidence_list.append(evidence)
         
         # Corroborate evidence
@@ -625,34 +664,6 @@ class PipelineOrchestrator:
                 "total_contradictory": sum(e["contradictory_count"] for e in assessments)
             }
         }
-        
-        # Calculate summary statistics
-        if assessments:
-            avg_confidence = round(sum(e["confidence"]["overall"] for e in assessments) / len(assessments), 3)
-            rating_counts = {
-                "A": len([e for e in assessments if e["confidence"]["rating"] == "A"]),
-                "B": len([e for e in assessments if e["confidence"]["rating"] == "B"]),
-                "C": len([e for e in assessments if e["confidence"]["rating"] == "C"]),
-                "D": len([e for e in assessments if e["confidence"]["rating"] == "D"])
-            }
-            avg_corroboration = round(sum(e["corroboration_score"] for e in assessments) / len(assessments), 3)
-        else:
-            avg_confidence = 0
-            rating_counts = {"A": 0, "B": 0, "C": 0, "D": 0}
-            avg_corroboration = 0
-        
-        return {
-            **data,
-            "evidence": assessments,
-            "evidence_summary": {
-                "total_evidence": len(assessments),
-                "average_confidence": avg_confidence,
-                "ratings_distribution": rating_counts,
-                "corroboration_rate": avg_corroboration,
-                "total_corroborating": sum(e["corroboration_count"] for e in assessments),
-                "total_contradictory": sum(e["contradictory_count"] for e in assessments)
-            }
-        }
     
     async def _signal_rating(self, data: Dict[str, Any], context: PipelineContext) -> Dict[str, Any]:
         """Stage 13: Rate signals"""
@@ -667,11 +678,9 @@ class PipelineOrchestrator:
         """Stage 14: Calibrate confidence across dimensions"""
         from src.models.mdips import ConfidenceModel
         
-        # Get confidence from previous stages
         evidence_ratings = data.get("evidence_ratings", [])
         confidence_data = evidence_ratings[0].get("confidence", {}) if evidence_ratings else {}
         
-        # Calibration factors based on corroboration
         calibration_factors = {
             "source_reliability": 0.05,
             "extraction_confidence": 0.02,
@@ -681,7 +690,6 @@ class PipelineOrchestrator:
             "analytical_confidence": 0.04
         }
         
-        # Apply calibration
         calibrated = ConfidenceModel(
             source_reliability=min(1.0, confidence_data.get("source_reliability", 0.5) + calibration_factors["source_reliability"]),
             extraction_confidence=min(1.0, confidence_data.get("extraction_confidence", 0.5) + calibration_factors["extraction_confidence"]),
@@ -696,7 +704,7 @@ class PipelineOrchestrator:
             "calibrated_confidence": {
                 "overall": calibrated.overall,
                 "evidence_rating": calibrated.evidence_rating.value,
-                "dimensions": calibrated.dict(),
+                "dimensions": calibrated.model_dump(),
                 "calibration_method": "bayesian_update",
                 "calibration_factors": calibration_factors
             }
@@ -718,11 +726,9 @@ class PipelineOrchestrator:
         from src.models.mdips import ConfidenceModel
         from src.metadata import MetadataEnricher
         
-        # Get calibrated confidence
         calibrated_confidence = data.get("calibrated_confidence", {})
         confidence_dimensions = calibrated_confidence.get("dimensions", {})
         
-        # Build confidence model for asset
         asset_confidence = ConfidenceModel(
             source_reliability=confidence_dimensions.get("source_reliability", 0.5),
             extraction_confidence=confidence_dimensions.get("extraction_confidence", 0.5),
@@ -732,7 +738,6 @@ class PipelineOrchestrator:
             analytical_confidence=confidence_dimensions.get("analytical_confidence", 0.5)
         )
         
-        # Create asset with confidence
         asset = {
             "asset_id": f"AST_{context.request_id[:8]}",
             "type": "intelligence_report",
@@ -747,7 +752,6 @@ class PipelineOrchestrator:
             "timestamp": datetime.now().isoformat()
         }
         
-        # Enrich with metadata
         enricher = MetadataEnricher()
         enriched_asset = enricher.enrich_dictionary(asset)
         
@@ -782,6 +786,46 @@ class PipelineOrchestrator:
             "published_at": datetime.now().isoformat(),
             "topics": ["intelligence.assets", "intelligence.signals"]
         }
+    
+    async def search(self, query: str, filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        """
+        Search intelligence assets
+        
+        Args:
+            query: Search query
+            filters: Optional filters
+            
+        Returns:
+            Search results
+        """
+        from src.search import SearchEngine
+        
+        # For now, use sample data
+        assets = [
+            {
+                "asset_id": "AST_001",
+                "title": "John Doe Profile",
+                "content": {
+                    "name": "John Doe",
+                    "phone": "+1-555-123-4567",
+                    "email": "john.doe@email.com"
+                }
+            },
+            {
+                "asset_id": "AST_002",
+                "title": "ACME Corp Intelligence",
+                "content": {
+                    "name": "ACME Corp",
+                    "industry": "Technology",
+                    "employees": 5000
+                }
+            }
+        ]
+        
+        engine = SearchEngine()
+        engine.index_assets(assets)
+        
+        return engine.search(query, filters)
 
 
 # Test the pipeline
@@ -795,7 +839,6 @@ if __name__ == "__main__":
         
         orchestrator = PipelineOrchestrator()
         
-        # Test data
         test_data = {
             "source_id": "test_source",
             "raw_content": "This is test intelligence data",
@@ -816,44 +859,3 @@ if __name__ == "__main__":
         print("\n✅ Pipeline test completed!")
     
     asyncio.run(test_pipeline())
-    
-async def search(self, query: str, filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-    """
-    Search intelligence assets
-    
-    Args:
-        query: Search query
-        filters: Optional filters
-        
-    Returns:
-        Search results
-    """
-    from src.search import SearchEngine
-    
-    # Get assets from recent pipeline runs
-    # For now, use sample data
-    assets = [
-        {
-            "asset_id": "AST_001",
-            "title": "John Doe Profile",
-            "content": {
-                "name": "John Doe",
-                "phone": "+1-555-123-4567",
-                "email": "john.doe@email.com"
-            }
-        },
-        {
-            "asset_id": "AST_002",
-            "title": "ACME Corp Intelligence",
-            "content": {
-                "name": "ACME Corp",
-                "industry": "Technology",
-                "employees": 5000
-            }
-        }
-    ]
-    
-    engine = SearchEngine()
-    engine.index_assets(assets)
-    
-    return engine.search(query, filters)
