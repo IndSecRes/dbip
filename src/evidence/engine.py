@@ -243,4 +243,4 @@ def create_evidence_from_signal(
 ) -> MDPISSEvidence:
     """Factory function to create evidence from a signal"""
     assessor = EvidenceAssessor()
-    return assessor.assess_evidence(signal, source_reliability, extraction_confidence)
+    return assessor.assess_evidence(signal, source_reliability, extraction_confidence)  

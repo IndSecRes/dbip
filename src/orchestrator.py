@@ -361,13 +361,74 @@ class PipelineOrchestrator:
         }
     
     async def _signal_fusion(self, data: Dict[str, Any], context: PipelineContext) -> Dict[str, Any]:
-        """Stage 9: Fuse multiple signals"""
+        """Stage 9: Fuse multiple signals into strong intelligence"""
+        from src.fusion import SignalFusionEngine
+        
+        # Get signals from previous stage
+        signals = data.get("extracted_entities", [])
+        
+        # Also include raw signals if available
+        raw_signals = data.get("collected_data", {}).get("records", [])
+        if raw_signals:
+            # Add raw signals with basic structure
+            for raw in raw_signals[:10]:  # Limit to 10
+                if isinstance(raw, dict):
+                    signals.append({
+                        "source": raw.get("source", "unknown"),
+                        "content": raw,
+                        "extracted_entities": []
+                    })
+        
+        if not signals:
+            return {
+                **data,
+                "fused_signals": [],
+                "fusion_summary": {
+                    "total_fused_signals": 0,
+                    "average_confidence": 0,
+                    "fusion_rate": 0
+                }
+            }
+        
+        # Initialize fusion engine
+        engine = SignalFusionEngine(confidence_threshold=0.6)
+        
+        # Fuse signals
+        fused_signals = engine.fuse_signals(signals)
+        
+        # Build output
+        fused_data = []
+        for fused in fused_signals:
+            fused_data.append({
+                "fused_id": fused.fused_id,
+                "signal_type": fused.signal_type,
+                "content": fused.content,
+                "sources": fused.sources,
+                "source_count": fused.source_count,
+                "confidence": {
+                    "overall": fused.confidence.overall,
+                    "rating": fused.confidence.evidence_rating.value,
+                    "dimensions": fused.confidence.model_dump()
+                },
+                "patterns": fused.patterns,
+                "entities": fused.entities,
+                "timestamp": fused.timestamp.isoformat()
+            })
+        
+        # Get summary
+        summary = engine.get_summary()
+        
         return {
             **data,
-            "fused_signals": [
-                {"signal_id": "sig_001", "confidence": 0.88, "sources": 3},
-                {"signal_id": "sig_002", "confidence": 0.92, "sources": 2}
-            ]
+            "fused_signals": fused_data,
+            "fusion_summary": {
+                "total_fused_signals": len(fused_signals),
+                "average_confidence": summary["average_confidence"],
+                "ratings_distribution": summary["ratings_distribution"],
+                "top_sources": summary["top_sources"],
+                "top_entities": summary["top_entities"],
+                "fusion_rate": round(len(fused_signals) / len(signals) if signals else 0, 3)
+            }
         }
     
     async def _relationship_construction(self, data: Dict[str, Any], context: PipelineContext) -> Dict[str, Any]:
@@ -380,18 +441,99 @@ class PipelineOrchestrator:
         }
     
     async def _identity_resolution(self, data: Dict[str, Any], context: PipelineContext) -> Dict[str, Any]:
-        """Stage 11: Resolve identities"""
-        return {
-            **data,
-            "resolved_entities": [
-                {
-                    "entity_id": "ent_001",
-                    "canonical_name": "John Doe",
-                    "aliases": ["J. Doe", "Johnathan Doe"],
-                    "confidence": 0.92
+        """Stage 11: Resolve identities across sources"""
+        try:
+            from src.identity import IdentityResolver
+            from src.identity.resolver import ResolvedEntity
+            from src.models.mdips import ConfidenceModel, EvidenceRating
+            import uuid
+            from datetime import datetime
+            
+            # Get entities from previous stage
+            entities = data.get("resolved_entities", [])
+            if not entities:
+                entities = data.get("extracted_entities", [])
+            
+            if not entities or not isinstance(entities, list):
+                return {
+                    **data,
+                    "resolved_identities": [],
+                    "resolution_summary": {
+                        "total_entities": 0,
+                        "resolved_count": 0,
+                        "unique_count": 0,
+                        "resolution_rate": 0
+                    }
                 }
-            ]
-        }
+            
+            # Initialize resolver with lower threshold for testing
+            resolver = IdentityResolver(threshold=0.7)
+            
+            # Resolve entities with error handling
+            try:
+                resolved = resolver.resolve_entities(entities)
+            except Exception as e:
+                self.logger.warning(f"Identity resolution error: {e}")
+                # Fallback: return entities as-is
+                resolved = []
+                for entity in entities:
+                    if entity and isinstance(entity, dict):
+                        resolved.append(ResolvedEntity(
+                            entity_id=entity.get("entity_id", str(uuid.uuid4())),
+                            canonical_id=f"CAN_{uuid.uuid4().hex[:8].upper()}",
+                            source_entity_ids=[entity.get("entity_id", str(uuid.uuid4()))],
+                            attributes=entity.get("attributes", {}),
+                            aliases=entity.get("aliases", []),
+                            confidence=ConfidenceModel(source_reliability=0.5),
+                            evidence_rating=EvidenceRating.C,
+                            resolved_at=datetime.now(),
+                            match_score=1.0
+                        ))
+            
+            # Build output
+            resolved_data = []
+            for entity in resolved:
+                if entity:
+                    resolved_data.append({
+                        "entity_id": getattr(entity, 'entity_id', ''),
+                        "canonical_id": getattr(entity, 'canonical_id', ''),
+                        "source_count": len(getattr(entity, 'source_entity_ids', [])),
+                        "source_entity_ids": getattr(entity, 'source_entity_ids', []),
+                        "attributes": getattr(entity, 'attributes', {}),
+                        "aliases": getattr(entity, 'aliases', []),
+                        "confidence": {
+                            "overall": getattr(entity, 'confidence', ConfidenceModel()).overall,
+                            "rating": getattr(entity, 'evidence_rating', EvidenceRating.C).value,
+                            "dimensions": getattr(entity, 'confidence', ConfidenceModel()).model_dump()
+                        },
+                        "match_score": getattr(entity, 'match_score', 0),
+                        "is_resolved": getattr(entity, 'is_resolved', False),
+                        "resolved_at": getattr(entity, 'resolved_at', datetime.now()).isoformat()
+                    })
+            
+            return {
+                **data,
+                "resolved_identities": resolved_data,
+                "resolution_summary": {
+                    "total_entities": len(entities),
+                    "resolved_count": len(resolved),
+                    "unique_count": len([e for e in resolved if getattr(e, 'is_resolved', False)]),
+                    "resolution_rate": round(len([e for e in resolved if getattr(e, 'is_resolved', False)]) / len(entities) if entities else 0, 3)
+                }
+            }
+        except Exception as e:
+            self.logger.error(f"Identity resolution failed: {e}")
+            return {
+                **data,
+                "resolved_identities": [],
+                "resolution_summary": {
+                    "total_entities": 0,
+                    "resolved_count": 0,
+                    "unique_count": 0,
+                    "resolution_rate": 0,
+                    "error": str(e)
+                }
+            }
     
     async def _evidence_assessment(self, data: Dict[str, Any], context: PipelineContext) -> Dict[str, Any]:
         """Stage 12: Assess evidence quality with multi-dimensional confidence"""
