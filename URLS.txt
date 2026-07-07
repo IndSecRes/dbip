@@ -1,0 +1,25 @@
+============================================
+DBIP - Important URLs
+============================================
+
+LOCAL BACKUP (Gitea):
+http://localhost:3000/admin/dbip
+
+CLOUD BACKUP (GitHub):
+https://github.com/IndSecRes/dbip
+
+SHAREABLE URL (Cloudflare Tunnel):
+https://indexes-placing-dublin-performances.trycloudflare.com/admin/dbip
+
+============================================
+COMMANDS:
+============================================
+# Sync all changes
+git add .; git commit -m "message"; git push gitea master; git push github master
+
+# Start Cloudflare Tunnel
+cd C:\cloudflared; .\cloudflared.exe tunnel --url http://localhost:3000
+
+# Start Gitea
+cd C:\gitea; docker-compose up -d
+============================================    

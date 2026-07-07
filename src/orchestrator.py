@@ -311,13 +311,53 @@ class PipelineOrchestrator:
         }
     
     async def _entity_extraction(self, data: Dict[str, Any], context: PipelineContext) -> Dict[str, Any]:
-        """Stage 8: Extract entities"""
+        """Stage 8: Extract entities with multi-dimensional confidence"""
+        from src.models.mdips import ConfidenceModel, MDIPSEntity, EntityType, Domain, create_entity
+        from datetime import datetime
+        
+        # Example: Extract person entity with confidence
+        person_confidence = ConfidenceModel(
+            source_reliability=0.9,
+            extraction_confidence=0.95,
+            identity_confidence=0.92,
+            relationship_confidence=0.85,
+            temporal_confidence=0.88,
+            analytical_confidence=0.90
+        )
+        
+        # Create entity with confidence
+        entity = create_entity(
+            entity_type=EntityType.PERSON,
+            label="John Doe",
+            description="Individual identified through chatter analysis",
+            attributes={
+                "phone_numbers": ["+1-555-123-4567"],
+                "emails": ["john.doe@email.com"],
+                "social_media": {
+                    "telegram": "@johndoe",
+                    "twitter": "@johndoe_nyc"
+                }
+            },
+            domains=[Domain.OSINT, Domain.SOCMINT]
+        )
+        entity.confidence = person_confidence
+        
         return {
             **data,
-            "extracted_entities": [
-                {"type": "person", "name": "John Doe", "confidence": 0.9},
-                {"type": "organization", "name": "ACME Corp", "confidence": 0.85}
-            ]
+            "extracted_entities": [entity.dict()],
+            "confidence_scores": {
+                "entity_id": entity.entity_id,
+                "overall": person_confidence.overall,
+                "evidence_rating": person_confidence.evidence_rating.value,
+                "dimensions": {
+                    "source_reliability": person_confidence.source_reliability,
+                    "extraction_confidence": person_confidence.extraction_confidence,
+                    "identity_confidence": person_confidence.identity_confidence,
+                    "relationship_confidence": person_confidence.relationship_confidence,
+                    "temporal_confidence": person_confidence.temporal_confidence,
+                    "analytical_confidence": person_confidence.analytical_confidence
+                }
+            }
         }
     
     async def _signal_fusion(self, data: Dict[str, Any], context: PipelineContext) -> Dict[str, Any]:
@@ -354,11 +394,39 @@ class PipelineOrchestrator:
         }
     
     async def _evidence_assessment(self, data: Dict[str, Any], context: PipelineContext) -> Dict[str, Any]:
-        """Stage 12: Assess evidence quality"""
+        """Stage 12: Assess evidence quality with multi-dimensional confidence"""
+        from src.models.mdips import ConfidenceModel, EvidenceRating
+        
+        # Extract confidence from previous stage
+        confidence_data = data.get("confidence_scores", {})
+        
+        # Build evidence assessment with confidence
+        evidence_confidence = ConfidenceModel(
+            source_reliability=0.9,
+            extraction_confidence=0.95,
+            identity_confidence=0.92,
+            relationship_confidence=0.85,
+            temporal_confidence=0.88,
+            analytical_confidence=0.90
+        )
+        
+        evidence_rating = evidence_confidence.evidence_rating
+        
         return {
             **data,
             "evidence_ratings": [
-                {"entity": "ent_001", "rating": EvidenceRating.B, "score": 0.85}
+                {
+                    "entity": "ent_001",
+                    "rating": evidence_rating.value,
+                    "score": evidence_confidence.overall,
+                    "confidence": evidence_confidence.dict(),
+                    "evidence_rating_description": {
+                        EvidenceRating.A: "Multiple independent sources, strong corroboration",
+                        EvidenceRating.B: "Multiple sources, some corroboration",
+                        EvidenceRating.C: "Single source or conflicting evidence",
+                        EvidenceRating.D: "Unconfirmed intelligence"
+                    }.get(evidence_rating, "Unknown")
+                }
             ]
         }
     
@@ -372,11 +440,42 @@ class PipelineOrchestrator:
         }
     
     async def _confidence_calibration(self, data: Dict[str, Any], context: PipelineContext) -> Dict[str, Any]:
-        """Stage 14: Calibrate confidence"""
+        """Stage 14: Calibrate confidence across dimensions"""
+        from src.models.mdips import ConfidenceModel
+        
+        # Get confidence from previous stages
+        evidence_ratings = data.get("evidence_ratings", [])
+        confidence_data = evidence_ratings[0].get("confidence", {}) if evidence_ratings else {}
+        
+        # Calibration factors based on corroboration
+        calibration_factors = {
+            "source_reliability": 0.05,
+            "extraction_confidence": 0.02,
+            "identity_confidence": 0.03,
+            "relationship_confidence": 0.04,
+            "temporal_confidence": 0.02,
+            "analytical_confidence": 0.04
+        }
+        
+        # Apply calibration
+        calibrated = ConfidenceModel(
+            source_reliability=min(1.0, confidence_data.get("source_reliability", 0.5) + calibration_factors["source_reliability"]),
+            extraction_confidence=min(1.0, confidence_data.get("extraction_confidence", 0.5) + calibration_factors["extraction_confidence"]),
+            identity_confidence=min(1.0, confidence_data.get("identity_confidence", 0.5) + calibration_factors["identity_confidence"]),
+            relationship_confidence=min(1.0, confidence_data.get("relationship_confidence", 0.5) + calibration_factors["relationship_confidence"]),
+            temporal_confidence=min(1.0, confidence_data.get("temporal_confidence", 0.5) + calibration_factors["temporal_confidence"]),
+            analytical_confidence=min(1.0, confidence_data.get("analytical_confidence", 0.5) + calibration_factors["analytical_confidence"])
+        )
+        
         return {
             **data,
-            "calibrated_confidence": 0.90,
-            "calibration_method": "bayesian_update"
+            "calibrated_confidence": {
+                "overall": calibrated.overall,
+                "evidence_rating": calibrated.evidence_rating.value,
+                "dimensions": calibrated.dict(),
+                "calibration_method": "bayesian_update",
+                "calibration_factors": calibration_factors
+            }
         }
     
     async def _temporal_intelligence(self, data: Dict[str, Any], context: PipelineContext) -> Dict[str, Any]:
@@ -391,15 +490,41 @@ class PipelineOrchestrator:
         }
     
     async def _asset_builder(self, data: Dict[str, Any], context: PipelineContext) -> Dict[str, Any]:
-        """Stage 16: Build intelligence assets"""
+        """Stage 16: Build intelligence assets with confidence"""
+        from src.models.mdips import ConfidenceModel
+        
+        # Get calibrated confidence
+        calibrated_confidence = data.get("calibrated_confidence", {})
+        confidence_dimensions = calibrated_confidence.get("dimensions", {})
+        
+        # Build confidence model for asset
+        asset_confidence = ConfidenceModel(
+            source_reliability=confidence_dimensions.get("source_reliability", 0.5),
+            extraction_confidence=confidence_dimensions.get("extraction_confidence", 0.5),
+            identity_confidence=confidence_dimensions.get("identity_confidence", 0.5),
+            relationship_confidence=confidence_dimensions.get("relationship_confidence", 0.5),
+            temporal_confidence=confidence_dimensions.get("temporal_confidence", 0.5),
+            analytical_confidence=confidence_dimensions.get("analytical_confidence", 0.5)
+        )
+        
+        # Create asset with confidence
+        asset = {
+            "asset_id": f"AST_{context.request_id[:8]}",
+            "type": "intelligence_report",
+            "title": "Preliminary Intelligence Assessment",
+            "confidence": {
+                "overall": asset_confidence.overall,
+                "evidence_rating": asset_confidence.evidence_rating.value,
+                "dimensions": asset_confidence.dict()
+            }
+        }
+        
         return {
             **data,
             "assets": [
                 {
-                    "asset_id": "ast_001",
-                    "type": "intelligence_report",
-                    "title": "Preliminary Threat Assessment",
-                    "confidence": 0.90
+                    **asset,
+                    "provenance": [p.dict() for p in context.provenance_chain]
                 }
             ]
         }
