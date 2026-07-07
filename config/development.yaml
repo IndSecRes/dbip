@@ -1,0 +1,39 @@
+# DBIP Development Configuration
+environment: development
+debug: true
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+  reload: true
+  workers: 1
+  debug: true
+
+database:
+  postgres:
+    host: localhost
+    port: 5432
+    user: dbip
+    password: dbip_password
+    database: dbip
+  redis:
+    host: localhost
+    port: 6379
+  neo4j:
+    uri: bolt://localhost:7687
+    user: neo4j
+    password: password
+
+pipeline:
+  fusion_threshold: 0.75
+  identity_similarity_threshold: 0.85
+  default_confidence: 0.5
+
+logging:
+  level: DEBUG
+
+features:
+  mdips_compliance: true
+  multi_dimensional_confidence: true
+  identity_resolution: true
+  evidence_assessment: true

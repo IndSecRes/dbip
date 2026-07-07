@@ -1,0 +1,54 @@
+# DBIP Production Configuration
+environment: production
+debug: false
+
+server:
+  host: "0.0.0.0"
+  port: 8000
+  reload: false
+  workers: 4
+
+database:
+  postgres:
+    host: ${POSTGRES_HOST}
+    port: ${POSTGRES_PORT}
+    user: ${POSTGRES_USER}
+    password: ${POSTGRES_PASSWORD}
+    database: ${POSTGRES_DATABASE}
+  redis:
+    host: ${REDIS_HOST}
+    port: ${REDIS_PORT}
+  neo4j:
+    uri: ${NEO4J_URI}
+    user: ${NEO4J_USER}
+    password: ${NEO4J_PASSWORD}
+
+pipeline:
+  fusion_threshold: 0.85
+  identity_similarity_threshold: 0.92
+  default_confidence: 0.5
+  retry_attempts: 3
+
+logging:
+  level: WARNING
+  json_format: true
+
+features:
+  mdips_compliance: true
+  multi_dimensional_confidence: true
+  identity_resolution: true
+  evidence_assessment: true
+  knowledge_graph: true
+  search_intelligence: true
+  observability: true
+  self_healing: true
+
+security:
+  rate_limit:
+    enabled: true
+    requests_per_minute: 100
+
+monitoring:
+  prometheus:
+    enabled: true
+    port: 9090

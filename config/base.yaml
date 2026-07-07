@@ -1,0 +1,217 @@
+# DBIP Base Configuration
+# Shared configuration across all environments
+# Environment-specific overrides in development.yaml, staging.yaml, production.yaml
+
+# Application metadata
+app:
+  name: "DBIP - Data Brokerage & Intelligence Platform"
+  version: "6.0.0"
+  description: "Trusted intelligence preparation layer of the Intelligence Ecosystem"
+
+# Default server settings
+server:
+  host: "0.0.0.0"
+  port: 8000
+  reload: false
+  workers: 1
+  timeout_keep_alive: 5
+  backlog: 2048
+
+# Default database settings
+database:
+  postgres:
+    pool_size: 5
+    max_overflow: 10
+    pool_timeout: 30
+    pool_recycle: 3600
+  redis:
+    pool_size: 5
+    decode_responses: true
+  neo4j:
+    pool_size: 5
+    connection_timeout: 30
+
+# Pipeline defaults
+pipeline:
+  max_concurrent_collections: 10
+  collection_timeout_seconds: 30
+  fusion_threshold: 0.75
+  identity_similarity_threshold: 0.85
+  default_confidence: 0.5
+  retry_attempts: 3
+  retry_delay: 5
+  batch_size: 100
+
+# MDIPS Configuration
+mdips:
+  version: "3.0"
+  validate_entities: true
+  validate_relationships: true
+  require_provenance: true
+  enforce_schema: true
+  confidence_framework: "multi_dimensional"
+
+# Supported entity types
+entity_types:
+  - person
+  - organization
+  - location
+  - event
+  - asset
+  - domain
+  - ip_address
+  - email
+  - account
+  - device
+  - malware
+  - wallet
+  - transaction
+  - document
+  - dataset
+  - report
+
+# Relationship types
+relationship_types:
+  - owns
+  - controls
+  - manages
+  - associated_with
+  - affiliated_with
+  - communicates_with
+  - hosts
+  - registered_with
+  - uses
+  - transfers_to
+  - transacts_with
+  - derived_from
+  - supported_by
+  - located_at
+  - contains
+  - implements
+  - belongs_to
+
+# Domains
+domains:
+  - OSINT   # Open Source Intelligence
+  - SOCMINT # Social Media Intelligence
+  - CYBINT  # Cyber Intelligence
+  - FININT  # Financial Intelligence
+  - GEOINT  # Geospatial Intelligence
+  - IMINT   # Image Intelligence
+  - DFIR    # Digital Forensics
+  - SIGINT  # Signals Intelligence
+
+# Source configuration
+sources:
+  default_rate_limit: 100
+  default_timeout: 30
+  retry_attempts: 3
+  backoff_factor: 2
+  supported_sources:
+    - telegram
+    - discord
+    - twitter
+    - linkedin
+    - github
+    - reddit
+    - web
+    - rss
+    - api
+
+# Logging defaults
+logging:
+  level: INFO
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  date_format: "%Y-%m-%d %H:%M:%S"
+  json_format: false
+
+# Feature flags (defaults - can be overridden)
+features:
+  mdips_compliance: true
+  multi_dimensional_confidence: true
+  identity_resolution: true
+  evidence_assessment: true
+  knowledge_graph: false
+  search_intelligence: false
+  observability: false
+  self_healing: false
+  auto_scaling: false
+  anomaly_detection: false
+  alerting: false
+
+# Security defaults
+security:
+  rate_limit:
+    enabled: true
+    requests_per_minute: 60
+  cors:
+    enabled: true
+    allow_credentials: true
+    allowed_methods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+      - OPTIONS
+    allowed_headers:
+      - "*"
+
+# Knowledge Server defaults
+knowledge_server:
+  enabled: true
+  host: "localhost"
+  port: 3000
+  auto_sync: false
+
+# ISCA Communication
+isca:
+  enabled: false
+  protocol: "rest"
+  host: "localhost"
+  port: 8080
+  retry_attempts: 3
+
+# Monitoring defaults
+monitoring:
+  enabled: false
+  prometheus:
+    enabled: false
+    port: 9090
+  health_check:
+    enabled: true
+    interval: 30
+
+# Cache defaults
+cache:
+  enabled: true
+  ttl: 3600  # 1 hour
+  max_size: 10000
+
+# Performance thresholds
+performance:
+  max_memory_mb: 4096
+  max_cpu_percent: 80
+  max_latency_ms: 5000
+  max_error_rate: 0.05
+
+# Quality thresholds
+quality:
+  min_confidence: 0.3
+  max_confidence: 1.0
+  min_evidence_rating: "D"
+  max_evidence_rating: "A"
+  duplication_threshold: 0.95
+  freshness_max_days: 30
+
+# Provenance defaults
+provenance:
+  require_complete_chain: true
+  max_chain_length: 100
+  store_transformations: true
+
+# Test configuration
+test_data:
+  enabled: false
+  sample_size: 10
+  random_seed: 42
+  validate_output: true

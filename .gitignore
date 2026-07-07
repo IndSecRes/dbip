@@ -1,0 +1,10 @@
+# Check if .gitignore exists
+cat .gitignore
+
+# If it's empty or missing, add these lines
+echo "venv/" >> .gitignore
+echo "__pycache__/" >> .gitignore
+echo "*.pyc" >> .gitignore
+echo ".env" >> .gitignore
+echo "server_manifest.json" >> .gitignore
+echo "backups/" >> .gitignore

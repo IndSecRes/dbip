@@ -1,0 +1,31 @@
+# Development dependencies
+
+# Testing
+pytest==7.4.0
+pytest-cov==4.1.0
+pytest-asyncio==0.21.1
+
+# Code quality
+black==23.11.0
+isort==5.12.0
+flake8==6.1.0
+mypy==1.7.0
+
+# Pre-commit
+pre-commit==3.5.0
+
+# Development tools
+ipython==8.17.2
+jupyter==1.0.0
+
+# Debugging (compatible versions)
+pdbpp==0.10.3
+fancycompleter==0.9.1
+rich==13.7.0
+
+# Profiling
+py-spy==0.3.14
+memory-profiler==0.61.0
+
+# HTTP client for testing
+httpx==0.25.1
