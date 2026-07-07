@@ -3,7 +3,7 @@ Agent Skills
 Skills that agents can execute
 """
 
-from typing import Dict, Any, Callable, Optional
+from typing import Dict, Any, Callable, Optional, List
 from dataclasses import dataclass, field
 from datetime import datetime
 import uuid
